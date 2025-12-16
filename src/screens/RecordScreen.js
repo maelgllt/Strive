@@ -1,23 +1,26 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import MapView, { PROVIDER_OSMDROID, Marker } from 'react-native-maps';
+import { StyleSheet, View } from 'react-native';
+import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
 
 export default function RecordScreen() {
   return (
     <View style={styles.container}>
       <MapView
-        provider={PROVIDER_OSMDROID} 
+        provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={{
-          latitude: 48.8566,
-          longitude: 2.3522,
+          latitude: 47.4736,
+          longitude: -0.5516,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         }}
+        showsUserLocation={true}
+        showsMyLocationButton={true}
       >
-        <Marker 
-          coordinate={{ latitude: 48.8566, longitude: 2.3522 }} 
-          title="Paris" 
+        <Marker
+          coordinate={{ latitude: 47.4736, longitude: -0.5516 }}
+          title="Angers Centre"
+          description="Centre-ville"
         />
       </MapView>
     </View>
@@ -29,7 +32,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   map: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
   },
 });
