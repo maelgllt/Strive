@@ -1,8 +1,8 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
-// Import des écrans
 import HomeScreen from '../screens/HomeScreen';
 import RecordScreen from '../screens/RecordScreen';
 import ProfileScreen from '../screens/ProfileScreen';
@@ -14,11 +14,24 @@ export default function AppNavigator() {
     <NavigationContainer>
       <Tab.Navigator
         initialRouteName="Record"
-        screenOptions={{
+        screenOptions={({ route }) => ({
           headerShown: false,
-          tabBarStyle: { paddingBottom: 5, height: 60 },
-          tabBarLabelStyle: { fontSize: 12 }
-        }}
+          tabBarActiveTintColor: 'tomato',
+          tabBarInactiveTintColor: 'gray',
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName;
+
+            if (route.name === 'Home') {
+              iconName = focused ? 'time' : 'time-outline';
+            } else if (route.name === 'Record') {
+              iconName = focused ? 'radio-button-on' : 'radio-button-off';
+            } else if (route.name === 'Profile') {
+              iconName = focused ? 'person' : 'person-outline';
+            }
+
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+        })}
       >
         <Tab.Screen name="Home" component={HomeScreen} options={{ title: "Historique" }} />
         <Tab.Screen name="Record" component={RecordScreen} options={{ title: "Enregistrer" }} />
