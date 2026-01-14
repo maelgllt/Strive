@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react'; // 1. On importe useRef
 import { StyleSheet, View, PermissionsAndroid, Platform, Alert, Text } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
 
 export default function RecordScreen() {
   const [hasPermission, setHasPermission] = useState(false);
   
+  const mapRef = useRef(null);
+
   const [markerPosition, setMarkerPosition] = useState({
     latitude: 47.4784,
     longitude: -0.5638,
@@ -41,27 +43,32 @@ export default function RecordScreen() {
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={{
           latitude: 47.4784,
           longitude: -0.5638,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
         }}
         showsUserLocation={true}   
         showsMyLocationButton={true} 
         
-
         onUserLocationChange={(e) => {
           if (e.nativeEvent.coordinate) {
-            setMarkerPosition(e.nativeEvent.coordinate);
+            const newCoords = e.nativeEvent.coordinate;
+            setMarkerPosition(newCoords);
+            mapRef.current?.animateCamera({
+              center: newCoords,
+              zoom: 15,
+            }, { duration: 500 });
           }
         }}
       >
         <Marker 
           coordinate={markerPosition}
-          title={hasPermission ? "Ma Position" : "Angers (Défaut)"}
+          title={hasPermission ? "Ma Position" : "Position par défaut"}
           pinColor="tomato" 
         />
       </MapView>
