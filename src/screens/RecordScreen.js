@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, PermissionsAndroid, Platform, Alert, Modal, TextInput, Animated } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, PermissionsAndroid, Platform, Alert, Modal, TextInput, Animated, ScrollView } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import { getDistance } from 'geolib'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,9 +12,10 @@ export default function RecordScreen({ navigation }) {
   
   const [duration, setDuration] = useState(0);
   const [distance, setDistance] = useState(0);
-  
   const [segments, setSegments] = useState([]);
   
+  const [sportType, setSportType] = useState('run'); // 'run', 'bike', 'walk'
+
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [markerPosition, setMarkerPosition] = useState({ latitude: 47.4784, longitude: -0.5638 });
   const [modalVisible, setModalVisible] = useState(false);
@@ -71,20 +72,22 @@ export default function RecordScreen({ navigation }) {
         ? [lastSegment.coordinates[lastSegment.coordinates.length - 1]] 
         : [];
 
-      return [
-        ...prevSegments,
-        { 
-          type: newStatus ? 'pause' : 'run',
-          coordinates: lastPoint 
-        }
-      ];
+      return [...prevSegments, { type: newStatus ? 'pause' : 'run', coordinates: lastPoint }];
     });
   };
 
   const handleStopPress = () => {
     setIsRecording(false);
     setIsPaused(false);
-    const defaultName = `Sortie du ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+    const timeOfDay = new Date().getHours();
+    const period = timeOfDay < 12 ? 'matin' : timeOfDay < 18 ? 'après-midi' : 'soir';
+    
+    let typeLabel = "Sortie";
+    if (sportType === 'run') typeLabel = "Course";
+    else if (sportType === 'bike') typeLabel = "Vélo";
+    else if (sportType === 'walk') typeLabel = "Marche";
+
+    const defaultName = `${typeLabel} du ${period}`;
     setActivityName(defaultName);
     setModalVisible(true);
   };
@@ -101,6 +104,7 @@ export default function RecordScreen({ navigation }) {
       segments: segments,
       coordinates: allCoordinates,
       avgSpeed: duration > 0 ? (distance / 1000) / (duration / 3600) : 0,
+      sportType: sportType,
     };
 
     try {
@@ -137,10 +141,8 @@ export default function RecordScreen({ navigation }) {
             const addedDist = getDistance(lastPoint, newCoords);
             if (addedDist > 3) setDistance(prev => prev + addedDist);
           }
-          
           return updatedSegments;
         });
-
         if (speedFromGps && speedFromGps >= 0) setCurrentSpeed((speedFromGps * 3.6).toFixed(1));
       }
     }
@@ -159,6 +161,12 @@ export default function RecordScreen({ navigation }) {
   const controlsOpacity = animValue.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
   const controlsScale = animValue.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] });
   const controlsTranslateY = animValue.interpolate({ inputRange: [0, 1], outputRange: [50, 0] });
+
+  const sports = [
+    { key: 'run', label: 'Course', icon: 'walk-outline' },
+    { key: 'bike', label: 'Vélo', icon: 'bicycle-outline' },
+    { key: 'walk', label: 'Marche', icon: 'footsteps-outline' },
+  ];
 
   return (
     <View style={styles.container}>
@@ -205,14 +213,28 @@ export default function RecordScreen({ navigation }) {
       </View>
 
       <View style={styles.controlsArea}>
+        
         <Animated.View style={[styles.controlWrapper, { opacity: startOpacity, transform: [{ scale: startScale }], zIndex: isRecording ? 0 : 1 }]}>
+          
+          <View style={styles.sportSelector}>
+            {sports.map((sport) => (
+                <TouchableOpacity 
+                    key={sport.key} 
+                    style={[styles.sportBtn, sportType === sport.key && styles.sportBtnActive]}
+                    onPress={() => setSportType(sport.key)}
+                >
+                    <Ionicons name={sport.icon} size={20} color={sportType === sport.key ? 'white' : '#555'} />
+                    <Text style={[styles.sportBtnText, sportType === sport.key && styles.sportBtnTextActive]}>{sport.label}</Text>
+                </TouchableOpacity>
+            ))}
+          </View>
+
           <TouchableOpacity style={styles.btnCircleLarge} onPress={startRecording} disabled={isRecording}>
             <Ionicons name="play" size={40} color="white" style={{ marginLeft: 5 }} />
           </TouchableOpacity>
         </Animated.View>
 
         <Animated.View style={[styles.controlWrapper, styles.rowControls, { opacity: controlsOpacity, transform: [{ scale: controlsScale }, { translateY: controlsTranslateY }], zIndex: isRecording ? 1 : 0 }]}>
-             
              <TouchableOpacity 
                 style={[styles.btnCircleMedium, { backgroundColor: isPaused ? '#4CD964' : '#FC4C02' }]} 
                 onPress={togglePause} 
@@ -231,7 +253,7 @@ export default function RecordScreen({ navigation }) {
         <View style={styles.centeredView}>
           <View style={styles.modalView}>
             <Text style={styles.modalText}>Nommez votre activité</Text>
-            <TextInput style={styles.input} onChangeText={setActivityName} value={activityName} placeholder="Ex: Course du matin" autoFocus={true} />
+            <TextInput style={styles.input} onChangeText={setActivityName} value={activityName} autoFocus={true} />
             <View style={styles.modalButtons}>
                 <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setModalVisible(false)}><Text style={styles.textStyle}>Annuler</Text></TouchableOpacity>
                 <TouchableOpacity style={[styles.button, styles.buttonSave]} onPress={saveActivity}><Text style={styles.textStyle}>Enregistrer</Text></TouchableOpacity>
@@ -246,31 +268,27 @@ export default function RecordScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
-  
   statsContainer: { position: 'absolute', top: 50, left: 20, right: 20, flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'white', padding: 15, borderRadius: 12, elevation: 4 },
-  statsContainerPaused: { backgroundColor: '#E0E0E0', borderColor: '#999', borderWidth: 1 }, 
+  statsContainerPaused: { backgroundColor: '#E0E0E0', borderColor: '#999', borderWidth: 1 },
   statBox: { alignItems: 'center' },
   statLabel: { fontSize: 10, color: '#888', fontWeight: 'bold' },
   statValue: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  statValuePaused: { color: '#777' }, 
-
-  pauseOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2, 
-    paddingBottom: 100
-  },
+  statValuePaused: { color: '#777' },
+  pauseOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255, 255, 255, 0.6)', justifyContent: 'center', alignItems: 'center', zIndex: 2, paddingBottom: 100 },
   pauseText: { fontSize: 40, fontWeight: '900', color: '#333', letterSpacing: 5 },
   pauseSubText: { fontSize: 16, color: '#555', marginTop: 10, fontWeight: '600' },
-
-  controlsArea: { position: 'absolute', bottom: 40, width: '100%', alignItems: 'center', height: 100, justifyContent: 'center', zIndex: 10 },
-  controlWrapper: { position: 'absolute', width: '100%', alignItems: 'center', justifyContent: 'center' },
-  rowControls: { flexDirection: 'row', justifyContent: 'space-evenly', width: '70%' },
+  controlsArea: { position: 'absolute', bottom: 40, width: '100%', alignItems: 'center', height: 180, justifyContent: 'flex-end', zIndex: 10 },
+  controlWrapper: { position: 'absolute', width: '100%', alignItems: 'center', justifyContent: 'center', bottom: 0 },
+  rowControls: { flexDirection: 'row', justifyContent: 'space-evenly', width: '70%', bottom: 20 },
   btnCircleLarge: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#FC4C02', justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5 },
   btnCircleMedium: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4 },
   
+  sportSelector: { flexDirection: 'row', backgroundColor: 'white', padding: 5, borderRadius: 25, elevation: 3, marginBottom: 20 },
+  sportBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 15, borderRadius: 20 },
+  sportBtnActive: { backgroundColor: '#FC4C02' },
+  sportBtnText: { marginLeft: 5, fontWeight: 'bold', color: '#555', fontSize: 12 },
+  sportBtnTextActive: { color: 'white' },
+
   centeredView: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: 'rgba(0,0,0,0.5)' },
   modalView: { width: '80%', backgroundColor: "white", borderRadius: 20, padding: 35, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
   modalText: { marginBottom: 15, textAlign: "center", fontSize: 18, fontWeight: 'bold' },

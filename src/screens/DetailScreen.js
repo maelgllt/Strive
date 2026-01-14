@@ -10,7 +10,6 @@ export default function DetailScreen({ route, navigation }) {
 
   const [name, setName] = useState(activity.name || "Sortie sans nom");
   const [isEditing, setIsEditing] = useState(false);
-
   const segmentsToDisplay = activity.segments || [{ type: 'run', coordinates: activity.coordinates }];
 
   useEffect(() => {
@@ -39,6 +38,14 @@ export default function DetailScreen({ route, navigation }) {
     } catch (e) {
       console.error(e);
       Alert.alert("Erreur", "Impossible de sauvegarder le nom.");
+    }
+  };
+
+  const getSportIcon = (type) => {
+    switch(type) {
+        case 'bike': return 'bicycle-outline';
+        case 'walk': return 'footsteps-outline';
+        case 'run': default: return 'walk-outline';
     }
   };
 
@@ -85,6 +92,11 @@ export default function DetailScreen({ route, navigation }) {
 
       <View style={styles.detailsContainer}>
         <View style={styles.titleContainer}>
+          <View style={styles.sportTag}>
+             <Ionicons name={getSportIcon(activity.sportType)} size={16} color="white" />
+             <Text style={styles.sportTagText}>{activity.sportType === 'bike' ? 'Vélo' : activity.sportType === 'walk' ? 'Marche' : 'Course'}</Text>
+          </View>
+
           {isEditing ? (
             <View style={styles.editRow}>
                 <TextInput style={styles.input} value={name} onChangeText={setName} autoFocus />
@@ -128,7 +140,11 @@ const styles = StyleSheet.create({
   mapContainer: { flex: 0.55 },
   map: { ...StyleSheet.absoluteFillObject },
   detailsContainer: { flex: 0.45, padding: 20, borderTopLeftRadius: 25, borderTopRightRadius: 25, marginTop: -20, backgroundColor: 'white', elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5 },
-  titleContainer: { marginBottom: 25, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', paddingBottom: 15 },
+  titleContainer: { marginBottom: 25, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', paddingBottom: 15, alignItems: 'center' },
+  
+  sportTag: { flexDirection: 'row', backgroundColor: '#FC4C02', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginBottom: 10, alignItems: 'center' },
+  sportTagText: { color: 'white', fontWeight: 'bold', fontSize: 12, marginLeft: 5, textTransform: 'uppercase' },
+  
   displayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 22, fontWeight: 'bold', color: '#222', textAlign: 'center' },
   subtitle: { textAlign: 'center', color: '#888', marginTop: 4, fontSize: 14 },
