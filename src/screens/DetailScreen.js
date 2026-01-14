@@ -11,6 +11,8 @@ export default function DetailScreen({ route, navigation }) {
   const [name, setName] = useState(activity.name || "Sortie sans nom");
   const [isEditing, setIsEditing] = useState(false);
 
+  const segmentsToDisplay = activity.segments || [{ type: 'run', coordinates: activity.coordinates }];
+
   useEffect(() => {
     if (activity.coordinates && activity.coordinates.length > 0) {
       setTimeout(() => {
@@ -29,9 +31,7 @@ export default function DetailScreen({ route, navigation }) {
       let history = existingHistory ? JSON.parse(existingHistory) : [];
 
       const updatedHistory = history.map(item => {
-        if (item.id === activity.id) {
-          return { ...item, name: name };
-        }
+        if (item.id === activity.id) return { ...item, name: name };
         return item;
       });
 
@@ -48,10 +48,7 @@ export default function DetailScreen({ route, navigation }) {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
+    if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
@@ -71,26 +68,27 @@ export default function DetailScreen({ route, navigation }) {
             longitudeDelta: 0.01,
           }}
         >
-          <Polyline coordinates={activity.coordinates} strokeColor="#FC4C02" strokeWidth={4} />
+          {segmentsToDisplay.map((segment, index) => (
+            <Polyline 
+                key={index}
+                coordinates={segment.coordinates}
+                strokeColor={segment.type === 'run' ? "#FC4C02" : "#888"}
+                strokeWidth={4}
+                lineDashPattern={segment.type === 'pause' ? [10, 10] : null}
+            />
+          ))}
+
           {activity.coordinates.length > 0 && <Marker coordinate={activity.coordinates[0]} pinColor="green" title="Départ" />}
           {activity.coordinates.length > 0 && <Marker coordinate={activity.coordinates[activity.coordinates.length - 1]} title="Arrivée" />}
         </MapView>
       </View>
 
       <View style={styles.detailsContainer}>
-        
         <View style={styles.titleContainer}>
           {isEditing ? (
             <View style={styles.editRow}>
-                <TextInput 
-                    style={styles.input} 
-                    value={name} 
-                    onChangeText={setName} 
-                    autoFocus 
-                />
-                <TouchableOpacity onPress={saveNameChange} style={styles.saveBtn}>
-                    <Text style={{color:'white', fontWeight:'bold'}}>OK</Text>
-                </TouchableOpacity>
+                <TextInput style={styles.input} value={name} onChangeText={setName} autoFocus />
+                <TouchableOpacity onPress={saveNameChange} style={styles.saveBtn}><Text style={{color:'white', fontWeight:'bold'}}>OK</Text></TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity style={styles.displayRow} onPress={() => setIsEditing(true)}>
@@ -102,31 +100,23 @@ export default function DetailScreen({ route, navigation }) {
         </View>
 
         <View style={styles.statsGrid}>
-            
             <View style={styles.statItem}>
-                <View style={styles.iconCircle}>
-                    <Ionicons name="map-outline" size={24} color="#FC4C02" />
-                </View>
+                <View style={styles.iconCircle}><Ionicons name="map-outline" size={24} color="#FC4C02" /></View>
                 <Text style={styles.statValue}>{(activity.distance / 1000).toFixed(2)}</Text>
                 <Text style={styles.statUnit}>km</Text>
             </View>
 
             <View style={styles.statItem}>
-                <View style={styles.iconCircle}>
-                    <Ionicons name="time-outline" size={24} color="#FC4C02" />
-                </View>
+                <View style={styles.iconCircle}><Ionicons name="time-outline" size={24} color="#FC4C02" /></View>
                 <Text style={styles.statValue}>{durationLabel}</Text>
                 <Text style={styles.statUnit}>h:m:s</Text>
             </View>
 
             <View style={styles.statItem}>
-                <View style={styles.iconCircle}>
-                    <Ionicons name="speedometer-outline" size={24} color="#FC4C02" />
-                </View>
+                <View style={styles.iconCircle}><Ionicons name="speedometer-outline" size={24} color="#FC4C02" /></View>
                 <Text style={styles.statValue}>{activity.avgSpeed ? Number(activity.avgSpeed).toFixed(1) : 0}</Text>
                 <Text style={styles.statUnit}>km/h</Text>
             </View>
-
         </View>
       </View>
     </View>
@@ -137,45 +127,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'white' },
   mapContainer: { flex: 0.55 },
   map: { ...StyleSheet.absoluteFillObject },
-  
-  detailsContainer: { 
-    flex: 0.45, 
-    padding: 20,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    marginTop: -20,
-    backgroundColor: 'white',
-    elevation: 10,
-    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5
-  },
-  
+  detailsContainer: { flex: 0.45, padding: 20, borderTopLeftRadius: 25, borderTopRightRadius: 25, marginTop: -20, backgroundColor: 'white', elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5 },
   titleContainer: { marginBottom: 25, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', paddingBottom: 15 },
   displayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 22, fontWeight: 'bold', color: '#222', textAlign: 'center' },
   subtitle: { textAlign: 'center', color: '#888', marginTop: 4, fontSize: 14 },
-  
   editRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   input: { borderBottomWidth: 1, borderColor: '#FC4C02', fontSize: 18, width: '60%', padding: 5, textAlign: 'center' },
   saveBtn: { backgroundColor: '#FC4C02', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, marginLeft: 10 },
-
-  statsGrid: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between',
-    marginTop: 10 
-  },
-  statItem: { 
-    alignItems: 'center', 
-    width: '30%',
-  },
-  iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#FFF0E6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8
-  },
+  statsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  statItem: { alignItems: 'center', width: '30%' },
+  iconCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FFF0E6', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   statValue: { fontSize: 20, fontWeight: 'bold', color: '#333' },
   statUnit: { fontSize: 14, color: '#999', fontWeight: '600' }
 });

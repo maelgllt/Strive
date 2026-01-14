@@ -1,25 +1,28 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, PermissionsAndroid, Platform, Alert, Modal, TextInput } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, PermissionsAndroid, Platform, Alert, Modal, TextInput, Animated } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import { getDistance } from 'geolib'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 export default function RecordScreen({ navigation }) {
   const [hasPermission, setHasPermission] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   
   const [duration, setDuration] = useState(0);
   const [distance, setDistance] = useState(0);
-  const [routeCoordinates, setRouteCoordinates] = useState([]);
+  
+  const [segments, setSegments] = useState([]);
+  
   const [currentSpeed, setCurrentSpeed] = useState(0);
-
   const [markerPosition, setMarkerPosition] = useState({ latitude: 47.4784, longitude: -0.5638 });
-
   const [modalVisible, setModalVisible] = useState(false);
   const [activityName, setActivityName] = useState('');
 
   const mapRef = useRef(null);
   const timerRef = useRef(null);
+  const animValue = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const requestLocationPermission = async () => {
@@ -34,37 +37,69 @@ export default function RecordScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    if (isRecording) {
+    if (isRecording && !isPaused) {
       timerRef.current = setInterval(() => setDuration(prev => prev + 1), 1000);
     } else {
       clearInterval(timerRef.current);
     }
     return () => clearInterval(timerRef.current);
+  }, [isRecording, isPaused]);
+
+  useEffect(() => {
+    Animated.timing(animValue, {
+      toValue: isRecording ? 1 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
   }, [isRecording]);
 
   const startRecording = () => {
     setDistance(0);
     setDuration(0);
-    setRouteCoordinates([]);
+    setSegments([{ type: 'run', coordinates: [] }]);
     setIsRecording(true);
+    setIsPaused(false);
+  };
+
+  const togglePause = () => {
+    const newStatus = !isPaused;
+    setIsPaused(newStatus);
+
+    setSegments(prevSegments => {
+      const lastSegment = prevSegments[prevSegments.length - 1];
+      const lastPoint = lastSegment && lastSegment.coordinates.length > 0 
+        ? [lastSegment.coordinates[lastSegment.coordinates.length - 1]] 
+        : [];
+
+      return [
+        ...prevSegments,
+        { 
+          type: newStatus ? 'pause' : 'run',
+          coordinates: lastPoint 
+        }
+      ];
+    });
   };
 
   const handleStopPress = () => {
     setIsRecording(false);
-    
+    setIsPaused(false);
     const defaultName = `Sortie du ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
     setActivityName(defaultName);
     setModalVisible(true);
   };
 
   const saveActivity = async () => {
+    const allCoordinates = segments.flatMap(s => s.coordinates);
+
     const newActivity = {
       id: Date.now().toString(),
       name: activityName,
       date: new Date().toISOString(),
       distance: distance,
       duration: duration,
-      coordinates: routeCoordinates,
+      segments: segments,
+      coordinates: allCoordinates,
       avgSpeed: duration > 0 ? (distance / 1000) / (duration / 3600) : 0,
     };
 
@@ -73,19 +108,11 @@ export default function RecordScreen({ navigation }) {
       const history = existingHistory ? JSON.parse(existingHistory) : [];
       history.unshift(newActivity);
       await AsyncStorage.setItem('activities', JSON.stringify(history));
-      
       setModalVisible(false);
-      
-      Alert.alert("Succès", "Activité enregistrée !", [
-        { text: "OK", onPress: () => {
-            setRouteCoordinates([]); 
-            setDistance(0);
-            setDuration(0);
-        }}
-      ]);
-    } catch (e) {
-      console.error("Erreur save", e);
-    }
+      Alert.alert("Succès", "Activité enregistrée !", [{ text: "OK", onPress: () => {
+        setSegments([]); setDistance(0); setDuration(0);
+      }}]);
+    } catch (e) { console.error(e); }
   };
 
   const handleUserLocationChange = (e) => {
@@ -97,19 +124,41 @@ export default function RecordScreen({ navigation }) {
       mapRef.current?.animateCamera({ center: newCoords, zoom: 17 }, { duration: 500 });
 
       if (isRecording) {
-        setRouteCoordinates(prevRoute => {
-          const newRoute = [...prevRoute, newCoords];
-          if (prevRoute.length > 0) {
-            const lastPoint = prevRoute[prevRoute.length - 1];
+        setSegments(prevSegments => {
+          const updatedSegments = [...prevSegments];
+          const currentSegmentIndex = updatedSegments.length - 1;
+          const currentSegment = { ...updatedSegments[currentSegmentIndex] };
+          
+          currentSegment.coordinates = [...currentSegment.coordinates, newCoords];
+          updatedSegments[currentSegmentIndex] = currentSegment;
+
+          if (currentSegment.type === 'run' && currentSegment.coordinates.length > 1) {
+            const lastPoint = currentSegment.coordinates[currentSegment.coordinates.length - 2];
             const addedDist = getDistance(lastPoint, newCoords);
             if (addedDist > 3) setDistance(prev => prev + addedDist);
           }
-          return newRoute;
+          
+          return updatedSegments;
         });
+
         if (speedFromGps && speedFromGps >= 0) setCurrentSpeed((speedFromGps * 3.6).toFixed(1));
       }
     }
   };
+
+  const formatDuration = (totalSeconds) => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const startOpacity = animValue.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const startScale = animValue.interpolate({ inputRange: [0, 1], outputRange: [1, 0.5] });
+  const controlsOpacity = animValue.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const controlsScale = animValue.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] });
+  const controlsTranslateY = animValue.interpolate({ inputRange: [0, 1], outputRange: [50, 0] });
 
   return (
     <View style={styles.container}>
@@ -121,59 +170,71 @@ export default function RecordScreen({ navigation }) {
         showsUserLocation={true}
         onUserLocationChange={handleUserLocationChange}
       >
-        {routeCoordinates.length > 0 && (
-            <Polyline coordinates={routeCoordinates} strokeColor="#FC4C02" strokeWidth={4} />
-        )}
+        {segments.map((segment, index) => (
+          <Polyline 
+            key={index}
+            coordinates={segment.coordinates}
+            strokeColor={segment.type === 'run' ? "#FC4C02" : "#888"}
+            strokeWidth={4}
+            lineDashPattern={segment.type === 'pause' ? [10, 10] : null}
+          />
+        ))}
         <Marker coordinate={markerPosition} title="Moi" pinColor="tomato" />
       </MapView>
 
-      <View style={styles.statsContainer}>
-        <View style={styles.statBox}><Text style={styles.statLabel}>DISTANCE (m)</Text><Text style={styles.statValue}>{distance}</Text></View>
-        <View style={styles.statBox}><Text style={styles.statLabel}>DURÉE</Text><Text style={styles.statValue}>{Math.floor(duration/60)}:{(duration%60).toString().padStart(2,'0')}</Text></View>
-        <View style={styles.statBox}><Text style={styles.statLabel}>VITESSE</Text><Text style={styles.statValue}>{currentSpeed}</Text></View>
+      {isPaused && (
+        <View style={styles.pauseOverlay}>
+            <Text style={styles.pauseText}>PAUSE</Text>
+            <Text style={styles.pauseSubText}>Appuyez sur play pour reprendre</Text>
+        </View>
+      )}
+
+      <View style={[styles.statsContainer, isPaused && styles.statsContainerPaused]}>
+        <View style={styles.statBox}>
+            <Text style={styles.statLabel}>DISTANCE (m)</Text>
+            <Text style={[styles.statValue, isPaused && styles.statValuePaused]}>{distance}</Text>
+        </View>
+        <View style={styles.statBox}>
+            <Text style={styles.statLabel}>DURÉE</Text>
+            <Text style={[styles.statValue, isPaused && styles.statValuePaused]}>{formatDuration(duration)}</Text>
+        </View>
+        <View style={styles.statBox}>
+            <Text style={styles.statLabel}>VITESSE</Text>
+            <Text style={[styles.statValue, isPaused && styles.statValuePaused]}>{currentSpeed}</Text>
+        </View>
       </View>
 
-      <View style={styles.controlsContainer}>
-        {!isRecording ? (
-          <TouchableOpacity style={[styles.btn, styles.btnStart]} onPress={startRecording}>
-            <Text style={styles.btnText}>DÉMARRER</Text>
+      <View style={styles.controlsArea}>
+        <Animated.View style={[styles.controlWrapper, { opacity: startOpacity, transform: [{ scale: startScale }], zIndex: isRecording ? 0 : 1 }]}>
+          <TouchableOpacity style={styles.btnCircleLarge} onPress={startRecording} disabled={isRecording}>
+            <Ionicons name="play" size={40} color="white" style={{ marginLeft: 5 }} />
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={[styles.btn, styles.btnStop]} onPress={handleStopPress}>
-            <Text style={styles.btnText}>STOP</Text>
-          </TouchableOpacity>
-        )}
+        </Animated.View>
+
+        <Animated.View style={[styles.controlWrapper, styles.rowControls, { opacity: controlsOpacity, transform: [{ scale: controlsScale }, { translateY: controlsTranslateY }], zIndex: isRecording ? 1 : 0 }]}>
+             
+             <TouchableOpacity 
+                style={[styles.btnCircleMedium, { backgroundColor: isPaused ? '#4CD964' : '#FC4C02' }]} 
+                onPress={togglePause} 
+                disabled={!isRecording}
+             >
+                <Ionicons name={isPaused ? "play" : "pause"} size={35} color="white" style={isPaused ? {marginLeft:4} : {}} />
+             </TouchableOpacity>
+             
+             <TouchableOpacity style={[styles.btnCircleMedium, { backgroundColor: '#333' }]} onPress={handleStopPress} disabled={!isRecording}>
+                <Ionicons name="square" size={28} color="white" />
+             </TouchableOpacity>
+        </Animated.View>
       </View>
 
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
+      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.centeredView}>
           <View style={styles.modalView}>
             <Text style={styles.modalText}>Nommez votre activité</Text>
-            <TextInput
-              style={styles.input}
-              onChangeText={setActivityName}
-              value={activityName}
-              placeholder="Ex: Course du matin"
-              autoFocus={true}
-            />
+            <TextInput style={styles.input} onChangeText={setActivityName} value={activityName} placeholder="Ex: Course du matin" autoFocus={true} />
             <View style={styles.modalButtons}>
-                <TouchableOpacity
-                    style={[styles.button, styles.buttonClose]}
-                    onPress={() => setModalVisible(false)}
-                >
-                    <Text style={styles.textStyle}>Annuler</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.button, styles.buttonSave]}
-                    onPress={saveActivity}
-                >
-                    <Text style={styles.textStyle}>Enregistrer</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setModalVisible(false)}><Text style={styles.textStyle}>Annuler</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.button, styles.buttonSave]} onPress={saveActivity}><Text style={styles.textStyle}>Enregistrer</Text></TouchableOpacity>
             </View>
           </View>
         </View>
@@ -185,20 +246,31 @@ export default function RecordScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
-  statsContainer: {
-    position: 'absolute', top: 50, left: 20, right: 20,
-    flexDirection: 'row', justifyContent: 'space-between',
-    backgroundColor: 'white', padding: 15, borderRadius: 12, elevation: 4
-  },
+  
+  statsContainer: { position: 'absolute', top: 50, left: 20, right: 20, flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'white', padding: 15, borderRadius: 12, elevation: 4 },
+  statsContainerPaused: { backgroundColor: '#E0E0E0', borderColor: '#999', borderWidth: 1 }, 
   statBox: { alignItems: 'center' },
   statLabel: { fontSize: 10, color: '#888', fontWeight: 'bold' },
   statValue: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  controlsContainer: { position: 'absolute', bottom: 30, width: '100%', alignItems: 'center' },
-  btn: { paddingVertical: 18, paddingHorizontal: 50, borderRadius: 30, elevation: 5 },
-  btnStart: { backgroundColor: '#FC4C02' },
-  btnStop: { backgroundColor: '#333' },
-  btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  statValuePaused: { color: '#777' }, 
 
+  pauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2, 
+    paddingBottom: 100
+  },
+  pauseText: { fontSize: 40, fontWeight: '900', color: '#333', letterSpacing: 5 },
+  pauseSubText: { fontSize: 16, color: '#555', marginTop: 10, fontWeight: '600' },
+
+  controlsArea: { position: 'absolute', bottom: 40, width: '100%', alignItems: 'center', height: 100, justifyContent: 'center', zIndex: 10 },
+  controlWrapper: { position: 'absolute', width: '100%', alignItems: 'center', justifyContent: 'center' },
+  rowControls: { flexDirection: 'row', justifyContent: 'space-evenly', width: '70%' },
+  btnCircleLarge: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#FC4C02', justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5 },
+  btnCircleMedium: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4 },
+  
   centeredView: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: 'rgba(0,0,0,0.5)' },
   modalView: { width: '80%', backgroundColor: "white", borderRadius: 20, padding: 35, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
   modalText: { marginBottom: 15, textAlign: "center", fontSize: 18, fontWeight: 'bold' },
