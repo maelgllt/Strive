@@ -8,17 +8,20 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadSession();
+    initAuth();
   }, []);
 
-  const loadSession = async () => {
+  const initAuth = async () => {
     try {
+      await authService.migratePasswords();
+      
+      // Chargement de la session
       const savedUser = await authService.getSession();
       if (savedUser) {
         setUser(savedUser);
       }
     } catch (error) {
-      console.error('Erreur lors du chargement de la session:', error);
+      console.error('Erreur lors de l\'initialisation de l\'authentification:', error);
     } finally {
       setLoading(false);
     }

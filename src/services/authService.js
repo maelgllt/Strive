@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import CryptoJS from 'crypto-js';
 
 const USERS_KEY = '@strive_users';
 const SESSION_KEY = '@strive_session';
@@ -7,6 +8,48 @@ const SESSION_KEY = '@strive_session';
  * Service d'authentification - gère l'inscription, la connexion et la persistance de session
  */
 class AuthService {
+  /**
+   * Hash un mot de passe avec SHA256
+   */
+  hashPassword(password) {
+    return CryptoJS.SHA256(password).toString();
+  }
+
+  /**
+   * Vérifie si un mot de passe est déjà hashé (longueur 64 caractères pour SHA256)
+   */
+  isPasswordHashed(password) {
+    return password && password.length === 64 && /^[a-f0-9]+$/.test(password);
+  }
+
+  /**
+   * Migration des anciens mots de passe en clair vers des mots de passe hashés
+   */
+  async migratePasswords() {
+    try {
+      const users = await this.getUsers();
+      let migrated = false;
+
+      const updatedUsers = users.map(user => {
+        if (!this.isPasswordHashed(user.password)) {
+          migrated = true;
+          return {
+            ...user,
+            password: this.hashPassword(user.password),
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return user;
+      });
+
+      if (migrated) {
+        await this.saveUsers(updatedUsers);
+        console.log('Migration des mots de passe effectuée avec succès');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la migration des mots de passe:', error);
+    }
+  }
   /**
    * Récupère tous les utilisateurs stockés
    */
@@ -61,7 +104,7 @@ class AuthService {
       id: Date.now().toString(),
       name,
       email: email.toLowerCase(),
-      password, 
+      password: this.hashPassword(password), // Mot de passe hashé
       createdAt: new Date().toISOString(),
     };
 
@@ -82,7 +125,7 @@ class AuthService {
 
     const users = await this.getUsers();
     const user = users.find(
-      u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+      u => u.email.toLowerCase() === email.toLowerCase() && u.password === this.hashPassword(password)
     );
 
     if (!user) {
@@ -188,7 +231,7 @@ class AuthService {
       throw new Error('Utilisateur non trouvé');
     }
 
-    if (user.password !== currentPassword) {
+    if (user.password !== this.hashPassword(currentPassword)) {
       throw new Error('Mot de passe actuel incorrect');
     }
 
@@ -196,7 +239,7 @@ class AuthService {
       throw new Error('Le nouveau mot de passe doit contenir au moins 6 caractères');
     }
 
-    user.password = newPassword;
+    user.password = this.hashPassword(newPassword);
     user.updatedAt = new Date().toISOString();
 
     await this.saveUsers(users);
