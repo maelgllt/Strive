@@ -77,15 +77,17 @@ export default function DetailScreen({ route, navigation }) {
             longitudeDelta: 0.01,
           }}
         >
-          {segmentsToDisplay.map((segment, index) => (
-            <Polyline 
+          {segmentsToDisplay
+            .filter(segment => segment.coordinates && segment.coordinates.length >= 2)
+            .map((segment, index) => (
+              <Polyline 
                 key={index}
                 coordinates={segment.coordinates}
                 strokeColor={segment.type === 'run' ? "#FC4C02" : "#888"}
                 strokeWidth={4}
                 lineDashPattern={segment.type === 'pause' ? [10, 10] : null}
-            />
-          ))}
+              />
+            ))}
 
           {activity.coordinates.length > 0 && <Marker coordinate={activity.coordinates[0]} pinColor="green" title="Départ" />}
           {activity.coordinates.length > 0 && <Marker coordinate={activity.coordinates[activity.coordinates.length - 1]} title="Arrivée" />}

@@ -32,6 +32,8 @@ export default function RecordScreen({ navigation }) {
   const watchId = useRef(null);
   const animValue = useRef(new Animated.Value(0)).current;
   const recenterButtonAnim = useRef(new Animated.Value(0)).current;
+  const isRecordingRef = useRef(false);
+  const isPausedRef = useRef(false);
 
   useEffect(() => {
     const init = async () => {
@@ -160,7 +162,7 @@ export default function RecordScreen({ navigation }) {
           }, { duration: 1000 });
         }
 
-        if (isRecording && !isPaused) {
+        if (isRecordingRef.current) {
           handleLocationForRecording(position.coords);
         }
 
@@ -205,18 +207,18 @@ export default function RecordScreen({ navigation }) {
         if (addedDist > 2 && addedDist < 100) {
           setDistance(d => {
             const dFinal = d + addedDist;
-            persistCurrentRun(updatedSegments, dFinal, duration, false); 
+            persistCurrentRun(updatedSegments, dFinal, duration, isPausedRef.current); 
             return dFinal;
           });
         } else {
           setDistance(d => {
-            persistCurrentRun(updatedSegments, d, duration, false);
+            persistCurrentRun(updatedSegments, d, duration, isPausedRef.current);
             return d;
           });
         }
       } else {
         setDistance(d => {
-          persistCurrentRun(updatedSegments, d, duration, false);
+          persistCurrentRun(updatedSegments, d, duration, isPausedRef.current);
           return d;
         });
       }
@@ -243,6 +245,8 @@ export default function RecordScreen({ navigation }) {
     setSegments([{ type: 'run', coordinates: [] }]);
     setIsRecording(true);
     setIsPaused(false);
+    isRecordingRef.current = true;
+    isPausedRef.current = false;
     setIsMapCentered(true);
     
     persistCurrentRun([{ type: 'run', coordinates: [] }], 0, 0, false);
@@ -254,6 +258,8 @@ export default function RecordScreen({ navigation }) {
     stopTracking();
     setIsRecording(false);
     setIsPaused(false);
+    isRecordingRef.current = false;
+    isPausedRef.current = false;
     
     AsyncStorage.removeItem('current_run_state');
     
@@ -267,6 +273,7 @@ export default function RecordScreen({ navigation }) {
   const togglePause = () => {
     setIsPaused(prev => {
       const newStatus = !prev;
+      isPausedRef.current = newStatus;
       setSegments(prevSegments => {
         const lastSegment = prevSegments[prevSegments.length - 1];
         const lastPoint = lastSegment && lastSegment.coordinates.length > 0 
@@ -341,15 +348,17 @@ export default function RecordScreen({ navigation }) {
         followsUserLocation={isMapCentered}
         onPanDrag={handleMapPanDrag} 
       >
-        {segments.map((segment, index) => (
-          <Polyline 
-            key={index}
-            coordinates={segment.coordinates}
-            strokeColor={segment.type === 'run' ? colors.primary : colors.mapTrackPause}
-            strokeWidth={4}
-            lineDashPattern={segment.type === 'pause' ? [10, 10] : null}
-          />
-        ))}
+        {segments
+          .filter(segment => segment.coordinates && segment.coordinates.length >= 2)
+          .map((segment, index) => (
+            <Polyline 
+              key={index}
+              coordinates={segment.coordinates}
+              strokeColor={segment.type === 'run' ? colors.primary : colors.mapTrackPause}
+              strokeWidth={4}
+              lineDashPattern={segment.type === 'pause' ? [10, 10] : null}
+            />
+          ))}
       </MapView>
       
       
