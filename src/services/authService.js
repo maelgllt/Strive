@@ -246,6 +246,28 @@ class AuthService {
 
     return true;
   }
+
+  /**
+   * Supprimer le compte utilisateur
+   */
+  async deleteAccount(userId) {
+    try {
+      const users = await this.getUsers();
+      const filteredUsers = users.filter(u => u.id !== userId);
+
+      if (users.length === filteredUsers.length) {
+        throw new Error('Utilisateur non trouvé');
+      }
+
+      await this.saveUsers(filteredUsers);
+      await this.logout();
+
+      return true;
+    } catch (error) {
+      console.error('Erreur lors de la suppression du compte:', error);
+      throw error;
+    }
+  }
 }
 
 export default new AuthService();

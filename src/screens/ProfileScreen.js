@@ -19,7 +19,7 @@ import permissionsService from '../services/permissionsService';
 import colors from '../theme/colors';
 
 export default function ProfileScreen() {
-  const { user, logout, updateProfile, changePassword } = useAuth();
+  const { user, logout, updateProfile, changePassword, deleteAccount } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
@@ -236,6 +236,28 @@ export default function ProfileScreen() {
       [
         { text: 'Annuler', style: 'cancel' },
         { text: 'Déconnexion', onPress: logout, style: 'destructive' },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      '⚠️ Supprimer le compte',
+      'Cette action est irréversible. Toutes vos données (profil, activités, statistiques) seront définitivement supprimées. Êtes-vous sûr de vouloir continuer ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await deleteAccount();
+            if (result.success) {
+              Alert.alert('Compte supprimé', 'Votre compte a été supprimé avec succès');
+            } else {
+              Alert.alert('Erreur', result.error);
+            }
+          },
+        },
       ]
     );
   };
@@ -490,6 +512,14 @@ export default function ProfileScreen() {
         >
           <Ionicons name="log-out-outline" size={20} color="#fff" />
           <Text style={styles.buttonDangerText}>Se déconnecter</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, styles.buttonDanger, { marginTop: 10, backgroundColor: '#8B0000' }]}
+          onPress={handleDeleteAccount}
+        >
+          <Ionicons name="trash-outline" size={20} color="#fff" />
+          <Text style={styles.buttonDangerText}>Supprimer mon compte</Text>
         </TouchableOpacity>
       </View>
 
