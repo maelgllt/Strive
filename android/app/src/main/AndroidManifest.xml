@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
       android:name=".MainApplication"
@@ -29,5 +31,9 @@
       <meta-data
         android:name="com.google.android.geo.API_KEY"
         android:value="@string/google_maps_key" />
+      <service android:name="com.agontuk.RNFusedLocation.ForegroundLocationService"
+        android:enabled="true"
+        android:exported="false"
+        android:foregroundServiceType="location" />
     </application>
 </manifest>
