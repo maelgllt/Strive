@@ -10,6 +10,7 @@ import {
   Modal,
   ActivityIndicator,
   Switch,
+  Image,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
@@ -17,6 +18,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import statsService from '../services/statsService';
 import permissionsService from '../services/permissionsService';
 import colors from '../theme/colors';
+import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 
 export default function ProfileScreen() {
   const { user, logout, updateProfile, changePassword, deleteAccount } = useAuth();
@@ -35,6 +37,8 @@ export default function ProfileScreen() {
     location: false,
     backgroundLocation: false,
     notifications: false,
+    camera: false,
+    photos: false,
   });
   const [loadingPermissions, setLoadingPermissions] = useState(false);
 
@@ -161,6 +165,66 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleCameraToggle = async (value) => {
+    if (value) {
+      setLoadingPermissions(true);
+      const granted = await permissionsService.requestCameraPermission();
+      setLoadingPermissions(false);
+      
+      if (granted) {
+        setPermissions(prev => ({ ...prev, camera: true }));
+      } else {
+        Alert.alert(
+          'Permission refusée',
+          'La permission caméra est nécessaire pour prendre des photos de profil.',
+          [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Paramètres', onPress: () => permissionsService.openAppSettings() }
+          ]
+        );
+      }
+    } else {
+      Alert.alert(
+        'Désactiver la caméra',
+        'Pour désactiver cette permission, rendez-vous dans les paramètres de votre appareil.',
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Ouvrir paramètres', onPress: () => permissionsService.openAppSettings() }
+        ]
+      );
+    }
+  };
+
+  const handlePhotosToggle = async (value) => {
+    if (value) {
+      setLoadingPermissions(true);
+      const granted = await permissionsService.requestPhotosPermission();
+      setLoadingPermissions(false);
+      
+      if (granted) {
+        setPermissions(prev => ({ ...prev, photos: true }));
+      } else {
+        Alert.alert(
+          'Permission refusée',
+          'La permission galerie est nécessaire pour sélectionner des photos de profil.',
+          [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Paramètres', onPress: () => permissionsService.openAppSettings() }
+          ]
+        );
+      }
+    } else {
+      Alert.alert(
+        'Désactiver la galerie',
+        'Pour désactiver cette permission, rendez-vous dans les paramètres de votre appareil.',
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Ouvrir paramètres', onPress: () => permissionsService.openAppSettings() }
+        ]
+      );
+    }
+  };
+
   // mettre à jour les valeurs locales quand l'utilisateur change
   useEffect(() => {
     if (user) {
@@ -262,6 +326,100 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleChangePhoto = () => {
+    Alert.alert(
+      'Photo de profil',
+      'Choisissez une source',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Galerie',
+          onPress: () => selectPhoto('library'),
+        },
+        {
+          text: 'Caméra',
+          onPress: () => selectPhoto('camera'),
+        },
+      ]
+    );
+  };
+
+  const selectPhoto = async (source) => {
+    const options = {
+      mediaType: 'photo',
+      quality: 0.5,
+      maxWidth: 400,
+      maxHeight: 400,
+      includeBase64: true,
+      saveToPhotos: false,
+      selectionLimit: 1,
+      presentationStyle: 'fullScreen',
+    };
+
+    try {
+      let result;
+      
+      if (source === 'library') {
+        result = await launchImageLibrary(options);
+      } else {
+        const hasPermission = await permissionsService.checkCameraPermission();
+        if (!hasPermission) {
+          const granted = await permissionsService.requestCameraPermission();
+          if (!granted) {
+            Alert.alert('Permission refusée', 'La permission caméra est nécessaire pour prendre une photo.');
+            return;
+          }
+        }
+        result = await launchCamera(options);
+      }
+
+      if (result.didCancel) {
+        console.log('User cancelled image picker');
+        return;
+      }
+      
+      if (result.errorCode) {
+        console.error('ImagePicker Error:', result.errorCode, result.errorMessage);
+        Alert.alert('Erreur', result.errorMessage || 'Impossible de charger l\'image');
+        return;
+      }
+
+      const asset = result.assets?.[0];
+      if (asset?.base64) {
+        const base64Image = `data:${asset.type};base64,${asset.base64}`;
+        const updates = { profilePhoto: base64Image };
+        
+        if (source === 'camera' && !user?.hasUsedCamera) {
+          updates.hasUsedCamera = true;
+        } else if (source === 'library' && !user?.hasUsedPhotos) {
+          updates.hasUsedPhotos = true;
+        }
+        
+        const updateResult = await updateProfile(updates);
+        if (updateResult.success) {
+          Alert.alert('Succès', 'Photo de profil mise à jour');
+          checkPermissions();
+        } else {
+          Alert.alert('Erreur', updateResult.error);
+        }
+      } else {
+        Alert.alert('Erreur', 'Aucune image sélectionnée');
+      }
+    } catch (error) {
+      console.error('Erreur sélection photo:', error);
+      Alert.alert('Erreur', `Impossible de sélectionner l'image: ${error.message}`);
+    }
+  };
+
+  const getInitials = () => {
+    if (!user?.name) return '?';
+    const names = user.name.split(' ');
+    if (names.length >= 2) {
+      return (names[0][0] + names[names.length - 1][0]).toUpperCase();
+    }
+    return user.name.slice(0, 2).toUpperCase();
+  };
+
   const handleCancelEdit = () => {
     setName(user?.name || '');
     setEmail(user?.email || '');
@@ -271,9 +429,23 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.avatarContainer}>
-          <Ionicons name="person" size={50} color="#fff" />
-        </View>
+        <TouchableOpacity 
+          style={styles.avatarContainer}
+          onPress={handleChangePhoto}
+          activeOpacity={0.7}
+        >
+          {user?.profilePhoto ? (
+            <Image
+              source={{ uri: user.profilePhoto }}
+              style={styles.avatarImage}
+            />
+          ) : (
+            <Text style={styles.avatarInitials}>{getInitials()}</Text>
+          )}
+          <View style={styles.avatarEditBadge}>
+            <Ionicons name="camera" size={16} color="#fff" />
+          </View>
+        </TouchableOpacity>
         <Text style={styles.userName}>{user?.name}</Text>
         <Text style={styles.email}>{user?.email}</Text>
       </View>
@@ -494,6 +666,48 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {user?.hasUsedCamera && (
+          <View style={styles.permissionItem}>
+            <View style={styles.permissionInfo}>
+              <View style={styles.permissionHeader}>
+                <Ionicons name="camera" size={24} color={colors.primary} />
+                <Text style={styles.permissionTitle}>Caméra</Text>
+              </View>
+              <Text style={styles.permissionDescription}>
+                Nécessaire pour prendre des photos de profil avec la caméra
+              </Text>
+            </View>
+            <Switch
+              value={permissions.camera}
+              onValueChange={handleCameraToggle}
+              trackColor={{ false: colors.border, true: colors.primaryLight }}
+              thumbColor={permissions.camera ? colors.primary : colors.textLighter}
+              disabled={loadingPermissions}
+            />
+          </View>
+        )}
+
+        {user?.hasUsedPhotos && (
+          <View style={styles.permissionItem}>
+            <View style={styles.permissionInfo}>
+              <View style={styles.permissionHeader}>
+                <Ionicons name="images" size={24} color={colors.primary} />
+                <Text style={styles.permissionTitle}>Galerie photos</Text>
+              </View>
+              <Text style={styles.permissionDescription}>
+                Nécessaire pour sélectionner des photos de profil depuis votre galerie
+              </Text>
+            </View>
+            <Switch
+              value={permissions.photos}
+              onValueChange={handlePhotosToggle}
+              trackColor={{ false: colors.border, true: colors.primaryLight }}
+              thumbColor={permissions.photos ? colors.primary : colors.textLighter}
+              disabled={loadingPermissions}
+            />
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.button, styles.buttonSecondary, { marginTop: 15 }]}
           onPress={() => permissionsService.openAppSettings()}
@@ -596,6 +810,30 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 3,
     borderColor: 'rgba(255, 255, 255, 0.5)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarInitials: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: colors.primary,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   userName: {
     fontSize: 24,

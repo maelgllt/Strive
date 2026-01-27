@@ -165,12 +165,104 @@ class PermissionsService {
     const location = await this.checkLocationPermission();
     const backgroundLocation = await this.checkBackgroundLocationPermission();
     const notifications = await this.checkNotificationPermission();
+    const camera = await this.checkCameraPermission();
+    const photos = await this.checkPhotosPermission();
 
     return {
       location,
       backgroundLocation,
       notifications,
+      camera,
+      photos,
     };
+  }
+
+  async checkCameraPermission() {
+    if (Platform.OS !== 'android') return true;
+
+    try {
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.CAMERA
+      );
+      return granted;
+    } catch (error) {
+      console.error('Erreur vérification permission caméra:', error);
+      return false;
+    }
+  }
+
+  async requestCameraPermission() {
+    if (Platform.OS !== 'android') return true;
+
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        {
+          title: 'Permission caméra',
+          message: 'Strive a besoin d\'accéder à votre caméra pour prendre une photo de profil',
+          buttonPositive: 'Autoriser',
+          buttonNegative: 'Refuser',
+        }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (error) {
+      console.error('Erreur demande permission caméra:', error);
+      return false;
+    }
+  }
+
+  async checkPhotosPermission() {
+    if (Platform.OS !== 'android') return true;
+
+    try {
+      if (Platform.Version >= 33) {
+        const granted = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+        );
+        return granted;
+      } else {
+        const granted = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+        );
+        return granted;
+      }
+    } catch (error) {
+      console.error('Erreur vérification permission photos:', error);
+      return false;
+    }
+  }
+
+  async requestPhotosPermission() {
+    if (Platform.OS !== 'android') return true;
+
+    try {
+      if (Platform.Version >= 33) {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+          {
+            title: 'Permission galerie',
+            message: 'Strive a besoin d\'accéder à vos photos pour sélectionner une photo de profil',
+            buttonPositive: 'Autoriser',
+            buttonNegative: 'Refuser',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } else {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+          {
+            title: 'Permission galerie',
+            message: 'Strive a besoin d\'accéder à vos photos pour sélectionner une photo de profil',
+            buttonPositive: 'Autoriser',
+            buttonNegative: 'Refuser',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      }
+    } catch (error) {
+      console.error('Erreur demande permission photos:', error);
+      return false;
+    }
   }
 }
 
