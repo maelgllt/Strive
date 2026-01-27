@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Scr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function HomeScreen({ navigation }) {
+  const { user } = useAuth();
   const [activities, setActivities] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('all');
@@ -14,7 +16,9 @@ export default function HomeScreen({ navigation }) {
     try {
       const stored = await AsyncStorage.getItem('activities');
       if (stored) {
-        setActivities(JSON.parse(stored));
+        const allActivities = JSON.parse(stored);
+        const userActivities = allActivities.filter(act => act.userId === user?.id);
+        setActivities(userActivities);
       }
     } catch (e) {
       console.error("Erreur de chargement", e);
@@ -42,9 +46,11 @@ export default function HomeScreen({ navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
-              const newActivities = activities.filter(item => item.id !== id);
-              setActivities(newActivities);
-              await AsyncStorage.setItem('activities', JSON.stringify(newActivities));
+              const stored = await AsyncStorage.getItem('activities');
+              const allActivities = stored ? JSON.parse(stored) : [];
+              const updatedActivities = allActivities.filter(item => item.id !== id);
+              await AsyncStorage.setItem('activities', JSON.stringify(updatedActivities));
+              setActivities(activities.filter(item => item.id !== id));
             } catch (e) {
               console.error("Erreur suppression", e);
             }

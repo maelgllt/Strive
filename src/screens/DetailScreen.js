@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'reac
 import MapView, { PROVIDER_GOOGLE, Polyline, Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function DetailScreen({ route, navigation }) {
+  const { user } = useAuth();
   const { activity } = route.params;
   const mapRef = useRef(null);
 

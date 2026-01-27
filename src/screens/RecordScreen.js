@@ -6,8 +6,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Geolocation from 'react-native-geolocation-service';
 import colors from '../theme/colors';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function RecordScreen({ navigation }) {
+  const { user } = useAuth();
   const [hasPermission, setHasPermission] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -284,6 +286,7 @@ export default function RecordScreen({ navigation }) {
     const allCoordinates = segments.flatMap(s => s.coordinates);
     const newActivity = {
       id: Date.now().toString(),
+      userId: user?.id,
       name: activityName,
       date: new Date().toISOString(),
       distance: distance,

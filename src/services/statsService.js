@@ -13,7 +13,7 @@ class StatsService {
       const activitiesJson = await AsyncStorage.getItem('activities');
       const allActivities = activitiesJson ? JSON.parse(activitiesJson) : [];
       
-      return allActivities;
+      return allActivities.filter(act => act.userId === userId);
     } catch (error) {
       console.error('Erreur lors de la récupération des activités:', error);
       return [];

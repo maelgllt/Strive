@@ -260,6 +260,14 @@ class AuthService {
       }
 
       await this.saveUsers(filteredUsers);
+
+      const activitiesJson = await AsyncStorage.getItem('activities');
+      if (activitiesJson) {
+        const allActivities = JSON.parse(activitiesJson);
+        const filteredActivities = allActivities.filter(act => act.userId !== userId);
+        await AsyncStorage.setItem('activities', JSON.stringify(filteredActivities));
+      }
+
       await this.logout();
 
       return true;
