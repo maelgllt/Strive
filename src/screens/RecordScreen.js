@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, PermissionsAndroid, Platform, Alert, Modal, TextInput, Animated } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, PermissionsAndroid, Platform, Alert, Modal, TextInput, Animated, AppState } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Polyline } from 'react-native-maps';
 import { getDistance } from 'geolib'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,6 +7,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import Geolocation from 'react-native-geolocation-service';
 import colors from '../theme/colors';
 import { useAuth } from '../contexts/AuthContext';
+import permissionsService from '../services/permissionsService';
 
 export default function RecordScreen({ navigation }) {
   const { user } = useAuth();
@@ -34,12 +35,23 @@ export default function RecordScreen({ navigation }) {
   const recenterButtonAnim = useRef(new Animated.Value(0)).current;
   const isRecordingRef = useRef(false);
   const isPausedRef = useRef(false);
+  const startTimeRef = useRef(null);
+  const pausedTimeRef = useRef(0);
+  const lastPauseStartRef = useRef(null);
 
   useEffect(() => {
     const init = async () => {
       if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
-        if (granted === PermissionsAndroid.RESULTS.GRANTED) setHasPermission(true);
+        const locationGranted = await permissionsService.requestLocationPermission();
+        if (!locationGranted) {
+          Alert.alert('Permission requise', 'L\'accès à la localisation est nécessaire pour enregistrer vos parcours');
+          return;
+        }
+        
+        await permissionsService.requestBackgroundLocationPermission();
+        await permissionsService.requestNotificationPermission();
+        
+        setHasPermission(true);
       } else {
         setHasPermission(true);
       }
@@ -63,27 +75,43 @@ export default function RecordScreen({ navigation }) {
 
     init();
 
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
     return () => {
        if (watchId.current !== null) {
-
+         Geolocation.clearWatch(watchId.current);
+         watchId.current = null;
        }
+       subscription?.remove();
     };
   }, []);
 
-  // Fonction pour vérifier si une course était en cours (crash recovery)
   const checkExistingRecording = async () => {
     try {
       const savedState = await AsyncStorage.getItem('current_run_state');
       if (savedState) {
-        const { segments: s, distance: d, duration: du, isPaused: p, sportType: st } = JSON.parse(savedState);
+        const { segments: s, distance: d, duration: du, isPaused: p, sportType: st, startTime, pausedTime, lastPauseStart } = JSON.parse(savedState);
         
-        // On restaure tout
+        startTimeRef.current = startTime;
+        pausedTimeRef.current = pausedTime || 0;
+        lastPauseStartRef.current = lastPauseStart;
+        
+        if (p && lastPauseStart) {
+          const timeSinceLastPause = Date.now() - lastPauseStart;
+          pausedTimeRef.current += timeSinceLastPause;
+        }
+        
+        const now = Date.now();
+        const elapsed = Math.floor((now - startTimeRef.current - pausedTimeRef.current) / 1000);
+        
         setSegments(s);
         setDistance(d);
-        setDuration(du);
+        setDuration(elapsed);
         setIsPaused(p);
         setSportType(st);
         setIsRecording(true);
+        isRecordingRef.current = true;
+        isPausedRef.current = p;
         
         startTracking();
       }
@@ -99,7 +127,10 @@ export default function RecordScreen({ navigation }) {
         duration: newDuration,
         isPaused: pausedStatus,
         sportType: sportType,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        startTime: startTimeRef.current,
+        pausedTime: pausedTimeRef.current,
+        lastPauseStart: lastPauseStartRef.current
     };
     await AsyncStorage.setItem('current_run_state', JSON.stringify(runState));
   };
@@ -107,10 +138,9 @@ export default function RecordScreen({ navigation }) {
   useEffect(() => {
     if (isRecording && !isPaused) {
       timerRef.current = setInterval(() => {
-          setDuration(prev => {
-              const newVal = prev + 1;
-              return newVal;
-          });
+          const now = Date.now();
+          const elapsed = Math.floor((now - startTimeRef.current - pausedTimeRef.current) / 1000);
+          setDuration(elapsed);
       }, 1000);
     } else {
       clearInterval(timerRef.current);
@@ -147,6 +177,28 @@ export default function RecordScreen({ navigation }) {
     if (isMapCentered) setIsMapCentered(false);
   };
 
+  const handleAppStateChange = (nextAppState) => {
+    if (isRecordingRef.current && nextAppState === 'background') {
+      console.log('App en background - Le tracking GPS continue avec le foreground service');
+    }
+    if (nextAppState === 'active' && isRecordingRef.current) {
+      console.log('App revenue en foreground - Mise à jour de la position');
+      Geolocation.getCurrentPosition(
+        (position) => {
+          setLastKnownCoords(position.coords);
+          if (isMapCentered && mapRef.current) {
+            mapRef.current.animateCamera({ 
+              center: { latitude: position.coords.latitude, longitude: position.coords.longitude }, 
+              zoom: 17 
+            });
+          }
+        },
+        (error) => console.log('Erreur récupération position:', error),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      );
+    }
+  };
+
   const startPassiveTracking = () => {
     if (watchId.current !== null) return;
 
@@ -162,25 +214,85 @@ export default function RecordScreen({ navigation }) {
           }, { duration: 1000 });
         }
 
-        if (isRecordingRef.current) {
+        if (isRecordingRef.current && !isPausedRef.current) {
           handleLocationForRecording(position.coords);
         }
 
         if (speed && speed >= 0) {
-          setCurrentSpeed((speed * 3.6).toFixed(1));
+          if (sportType === 'run' || sportType === 'walk') {
+            const speedKmh = speed * 3.6;
+            if (speedKmh > 0.5) {
+              const paceMinPerKm = 60 / speedKmh;
+              setCurrentSpeed(paceMinPerKm);
+            } else {
+              setCurrentSpeed(0);
+            }
+          } else {
+            setCurrentSpeed((speed * 3.6).toFixed(1));
+          }
         }
       },
       (error) => console.log('Erreur suivi GPS:', error),
       {
         enableHighAccuracy: true,
         distanceFilter: 5,
-        interval: 3000,
-        fastestInterval: 2000,
+        interval: 2000,
+        fastestInterval: 1000,
         showLocationDialog: true,
         forceRequestLocation: true,
+        useSignificantChanges: false,
+      }
+    );
+  };
+
+  const startActiveTracking = () => {
+    if (watchId.current !== null) {
+      Geolocation.clearWatch(watchId.current);
+      watchId.current = null;
+    }
+
+    watchId.current = Geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude, speed } = position.coords;
+        setLastKnownCoords(position.coords);
+
+        if (isMapCentered && mapRef.current) {
+          mapRef.current.animateCamera({
+            center: { latitude, longitude },
+            zoom: 17,
+          }, { duration: 1000 });
+        }
+
+        if (isRecordingRef.current && !isPausedRef.current) {
+          handleLocationForRecording(position.coords);
+        }
+
+        if (speed && speed >= 0) {
+          if (sportType === 'run' || sportType === 'walk') {
+            const speedKmh = speed * 3.6;
+            if (speedKmh > 0.5) {
+              const paceMinPerKm = 60 / speedKmh;
+              setCurrentSpeed(paceMinPerKm);
+            } else {
+              setCurrentSpeed(0);
+            }
+          } else {
+            setCurrentSpeed((speed * 3.6).toFixed(1));
+          }
+        }
+      },
+      (error) => console.log('Erreur suivi GPS:', error),
+      {
+        enableHighAccuracy: true,
+        distanceFilter: 5,
+        interval: 2000,
+        fastestInterval: 1000,
+        showLocationDialog: true,
+        forceRequestLocation: true,
+        useSignificantChanges: false,
         foregroundService: {
-          notificationTitle: "Strive",
-          notificationBody: "Suivi de votre position",
+          notificationTitle: "🏃 Enregistrement en cours",
+          notificationBody: "Strive suit votre position",
           notificationColor: colors.primary,
         },
       }
@@ -228,7 +340,7 @@ export default function RecordScreen({ navigation }) {
   };
 
   const startTracking = () => {
-    startPassiveTracking();
+    startActiveTracking();
   };
 
   const stopTracking = () => {
@@ -236,10 +348,16 @@ export default function RecordScreen({ navigation }) {
       Geolocation.clearWatch(watchId.current);
       watchId.current = null;
     }
-    Geolocation.stopObserving();
+    // Revenir au tracking passif
+    startPassiveTracking();
   };
 
   const startRecording = () => {
+    const now = Date.now();
+    startTimeRef.current = now;
+    pausedTimeRef.current = 0;
+    lastPauseStartRef.current = null;
+    
     setDistance(0);
     setDuration(0);
     setSegments([{ type: 'run', coordinates: [] }]);
@@ -273,6 +391,20 @@ export default function RecordScreen({ navigation }) {
   const togglePause = () => {
     setIsPaused(prev => {
       const newStatus = !prev;
+      const now = Date.now();
+      
+      if (newStatus) {
+        // On met en pause : sauvegarder le timestamp
+        lastPauseStartRef.current = now;
+      } else {
+        // On reprend : ajouter le temps de pause écoulé
+        if (lastPauseStartRef.current) {
+          const pauseDuration = now - lastPauseStartRef.current;
+          pausedTimeRef.current += pauseDuration;
+          lastPauseStartRef.current = null;
+        }
+      }
+      
       isPausedRef.current = newStatus;
       setSegments(prevSegments => {
         const lastSegment = prevSegments[prevSegments.length - 1];
@@ -321,6 +453,13 @@ export default function RecordScreen({ navigation }) {
     const s = totalSeconds % 60;
     if (h > 0) return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
     return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+  };
+
+  const formatPace = (paceMinPerKm) => {
+    if (!paceMinPerKm || paceMinPerKm === 0) return '--:--';
+    const minutes = Math.floor(paceMinPerKm);
+    const seconds = Math.floor((paceMinPerKm - minutes) * 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
   const startOpacity = animValue.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
@@ -398,8 +537,10 @@ export default function RecordScreen({ navigation }) {
             <Text style={[styles.statValue, isPaused && styles.statValuePaused]}>{formatDuration(duration)}</Text>
         </View>
         <View style={styles.statBox}>
-            <Text style={styles.statLabel}>VITESSE</Text>
-            <Text style={[styles.statValue, isPaused && styles.statValuePaused]}>{currentSpeed}</Text>
+            <Text style={styles.statLabel}>{sportType === 'bike' ? 'VITESSE (km/h)' : 'ALLURE (min/km)'}</Text>
+            <Text style={[styles.statValue, isPaused && styles.statValuePaused]}>
+              {sportType === 'bike' ? currentSpeed : formatPace(currentSpeed)}
+            </Text>
         </View>
       </View>
 
