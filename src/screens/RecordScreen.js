@@ -267,18 +267,18 @@ export default function RecordScreen({ navigation }) {
           handleLocationForRecording(position.coords);
         }
 
-        if (speed && speed >= 0) {
-          if (sportType === 'run' || sportType === 'walk') {
-            const speedKmh = speed * 3.6;
-            if (speedKmh > 0.5) {
-              const paceMinPerKm = 60 / speedKmh;
-              setCurrentSpeed(paceMinPerKm);
-            } else {
-              setCurrentSpeed(0);
-            }
+        if (speed !== null && speed !== undefined && speed >= 0) {
+          const speedKmh = speed * 3.6;
+          if (speedKmh < 0.5) {
+            setCurrentSpeed(0);
+          } else if (sportType === 'run' || sportType === 'walk') {
+            const paceMinPerKm = 60 / speedKmh;
+            setCurrentSpeed(paceMinPerKm);
           } else {
-            setCurrentSpeed((speed * 3.6).toFixed(1));
+            setCurrentSpeed(parseFloat(speedKmh.toFixed(2)));
           }
+        } else {
+          setCurrentSpeed(0);
         }
       },
       (error) => console.log('Erreur suivi GPS:', error),
